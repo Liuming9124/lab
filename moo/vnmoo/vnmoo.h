@@ -65,6 +65,7 @@ private:
     vector<T_Net> Net;    // net
     vector<T_Point> X, X_previous;    // point
     T_Saver saver; // store history best
+    vector<T_Point> arch;
     vector<T_Point> external_archive; // external archive
 
     int num_Point;
@@ -89,6 +90,7 @@ private:
     void net_update();
 
     void save_to_saver();
+    void PrintSaver();
 
     void Init_T_point(vector<T_Point> &points, int size, int dim, bool posInitRand);
     void Init_T_net(vector<T_Net> &nets, int size, int num_region);
@@ -162,87 +164,80 @@ void VNMOO::Evaluation()
         // net update
         net_update();
 
-        // save_to_saver();
+        save_to_saver();
         
-        // print the Pareto Front
-        // 先排序X，把rank=1的放到前面
-        vector<T_Point> tmp = X;
-        sort(tmp.begin(), tmp.end(), PointCompareFitness);
-        cout << "Pareto Front" << endl;
-        // print all rank of points
-        FastNonDominatedSort(tmp);
-        for (const auto& point : tmp) {
-            // cout << "Rank: " << point._rank << ", Fitness: ";
-            // for (double f : point._fitness) {
-            //     cout << f << " ";
-            // }
-            // cout << ", Position: ";
-            // for (double p : point._position) {
-            //     cout << p << " ";
-            // }
-            // cout << endl;
-            if (point._rank == 0) {
-                cout << "Fitness: ";
-                for (double f : point._fitness) {
-                    cout << f << " ";
-                }
-                cout << ", Position: ";
-                for (double p : point._position) {
-                    cout << p << " ";
-                }
-                cout << endl;
-            }
-        }
     }
-    // for (const auto& point : external_archive) {
-    //     cout << "Fitness: ";
-    //     for (double f : point._fitness) {
-    //         cout << f << " ";
-    //     }
-    //     cout << ", Position: ";
-    //     for (double p : point._position) {
-    //         cout << p << " ";
-    //     }
-    //     cout << endl;
-    // }
-    
-    {
-    // // Print final results from the saver
-    // cout << "Final Results:" << endl;
-    // for (size_t i = 0; i < saver.position.size(); ++i) {
-    //     cout << "Solution " << i + 1 << ": Fitness = ";
-    //     for (double f : saver.fitness[i]) {
-    //         cout << f << " ";
-    //     }
-    //     cout << ", Position = ";
-    //     for (double p : saver.position[i]) {
-    //         cout << p << " ";
-    //     }
-    //     cout << endl;
-    // }
 
-    }
+    PrintSaver();
+
+    // // print the Pareto Front
+    // // 先排序X，把rank=0的放到前面
+    // vector<T_Point> tmp = X;
+    // sort(tmp.begin(), tmp.end(), PointCompareFitness);
+    // // cout << "Pareto Front" << endl;
+    // // print all rank of points
+    // FastNonDominatedSort(tmp);
+    // vector<T_Point> pareto_front;
+    // for (const auto& point : tmp) {
+    //     if (point._rank == 0) {
+    //         pareto_front.push_back(point);
+    //     }
+    // }
+    // for (const auto& point : pareto_front) {
+    //     for (double val : point._fitness) {
+    //         cout << val << " ";
+    //     }
+    //     cout << endl;
+    // }
 }
 
 void VNMOO::save_to_saver() {
-    vector<double> combined_obj;
-    for (const auto& point : X) {
-        combined_obj.push_back(accumulate(point._fitness.begin(), point._fitness.end(), 0.0));
-    }
-    saver.obj = combined_obj;
-
+    // 遍歷所有的點，檢查是否需要更新 saver
     for (size_t i = 0; i < X.size(); ++i) {
-        if (saver.fitness.size() < 10 || combined_obj[i] > saver.obj[saver.good_saver[0]]) {
-            saver.position.push_back(X[i]._position);
-            saver.fitness.push_back(X[i]._fitness);
-            saver.good_saver.push_back(i);
+        double new_score = X[i]._pfitness;
+
+        // (a) 若 saver 尚未儲存 10 筆資料，直接加入
+        if (saver.position.size() < 500) {
+            saver.position.push_back(X[i]._position); // 儲存位置
+            saver.fitness.push_back(X[i]._fitness);  // 儲存適應值向量
+            saver.obj.push_back(new_score);          // 儲存 pfitness
+            saver.good_saver.push_back(X[i]._index); // 儲存索引
+        }
+        else {
+            // (b) 若 saver 已儲存 10 筆，找出目前 `saver` 中 pfitness 最大(最差)的一筆
+            // 假設越小的 pfitness 越好
+            auto worst_it = std::max_element(saver.obj.begin(), saver.obj.end());
+            double worst_val = *worst_it;
+            int worst_idx = std::distance(saver.obj.begin(), worst_it);
+
+            // 如果新解的 pfitness 比目前 `saver` 最差的解更好，就替換
+            if (new_score < worst_val) {
+                saver.position[worst_idx] = X[i]._position; // 更新位置
+                saver.fitness[worst_idx] = X[i]._fitness;   // 更新適應值向量
+                saver.obj[worst_idx] = new_score;           // 更新 pfitness
+                saver.good_saver[worst_idx] = X[i]._index;  // 更新索引
+            }
         }
     }
 }
 
+void VNMOO::PrintSaver() {
+    cout << "Top 10 Solutions in Saver:" << endl;
+    for (size_t i = 0; i < saver.position.size(); ++i) {
+        cout << "Solution " << i + 1 << ": ";
+        cout << "pfitness = " << saver.obj[i] << ", Position = [";
+        for (size_t d = 0; d < saver.position[i].size(); ++d) {
+            cout << saver.position[i][d];
+            if (d < saver.position[i].size() - 1) cout << ", ";
+        }
+        cout << "]" << endl;
+    }
+}
+
+
 
 void VNMOO::expected_value() {
-    cout << "Expected Value" << endl;
+    // cout << "Expected Value" << endl;
     const double delta = 2.0; // 額外權重 δ，用於加強非支配等級的影響
     vector<double> fitnessValues(X.size(), 0.0); // 用於存放適應值 F(x_i)
     // Step 1: 計算非支配等級和擁擠距離
@@ -321,11 +316,11 @@ void VNMOO::expected_value() {
     for (int i = 0; i < num_Point; i++) {
         X_previous[i] = X[i];
     }
-    cout << "Expected Value Done" << endl;
+    // cout << "Expected Value Done" << endl;
 }
 
 void VNMOO::vision_search() {
-    cout << "Vision Search" << endl;
+    // cout << "Vision Search" << endl;
     const double alpha = 0.7; // 用於進步值衰退
     const double delta = 2.0; // 額外權重，用於強化非支配等級影響
     const double pbest_ratio = 0.2; // 參考前 pbest 比例的區域 TODO add in algorithm parameters
@@ -416,11 +411,11 @@ void VNMOO::vision_search() {
 
     // Step 7: 更新成功歷史表的平均值 TODO checkout
     update_HistoryTable();
-    cout << "Vision Search Done" << endl;
+    // cout << "Vision Search Done" << endl;
 }
 
 void VNMOO::update_HistoryTable() {
-    cout << "Update History Table" << endl;
+    // cout << "Update History Table" << endl;
 
     // Step 1: 計算加權 w_i
     vector<double> weights(deltaF.size(), 0.0);
@@ -459,12 +454,12 @@ void VNMOO::update_HistoryTable() {
     // 更新歷史索引（循環）
     history_index = (history_index + 1) % num_History;
 
-    cout << "Update History Table Done" << endl;
+    // cout << "Update History Table Done" << endl;
 }
 
 
 void VNMOO::net_update() {
-    cout << "Net Update" << endl;
+    // cout << "Net Update" << endl;
     // 設定必要參數
     double l_min = 3.0;  // 最小邊長（依問題需要調整）
     int l_current = num_Netlen; // 當前的邊長（遠見網的邊長）
@@ -478,7 +473,7 @@ void VNMOO::net_update() {
     num_Point = num_Netlen * num_Netlen;
     // 如果邊長未改變則不需要更新
     if (l_new == l_current){
-        cout << "net update done" << endl;
+        // cout << "net update done" << endl;
         return;
     }
     // 計算新的區域數量和點數量
@@ -526,7 +521,7 @@ void VNMOO::net_update() {
     //     cout << endl;
     // }
 
-    cout << "Net Update Done" << endl;
+    // cout << "Net Update Done" << endl;
 }
 
 
